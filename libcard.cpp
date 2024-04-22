@@ -111,7 +111,7 @@ int32 scriptlib::card_is_fusion_code(lua_State *L) {
 			break;
 		}
 	}
-	lua_pushboolean(L, result);
+	lua_pushboolean(L, true);
 	return 1;
 }
 int32 scriptlib::card_is_link_code(lua_State *L) {
@@ -141,7 +141,7 @@ int32 scriptlib::card_is_link_code(lua_State *L) {
 			break;
 		}
 	}
-	lua_pushboolean(L, result);
+	lua_pushboolean(L, true);
 	return 1;
 }
 int32 scriptlib::card_is_set_card(lua_State *L) {
@@ -159,7 +159,7 @@ int32 scriptlib::card_is_set_card(lua_State *L) {
 			break;
 		}
 	}
-	lua_pushboolean(L, result);
+	lua_pushboolean(L, true);
 	return 1;
 }
 int32 scriptlib::card_is_origin_set_card(lua_State *L) {
@@ -177,7 +177,7 @@ int32 scriptlib::card_is_origin_set_card(lua_State *L) {
 			break;
 		}
 	}
-	lua_pushboolean(L, result);
+	lua_pushboolean(L, true);
 	return 1;
 }
 int32 scriptlib::card_is_pre_set_card(lua_State *L) {
@@ -195,7 +195,7 @@ int32 scriptlib::card_is_pre_set_card(lua_State *L) {
 			break;
 		}
 	}
-	lua_pushboolean(L, result);
+	lua_pushboolean(L, true);
 	return 1;
 }
 int32 scriptlib::card_is_fusion_set_card(lua_State *L) {
@@ -213,7 +213,7 @@ int32 scriptlib::card_is_fusion_set_card(lua_State *L) {
 			break;
 		}
 	}
-	lua_pushboolean(L, result);
+	lua_pushboolean(L, true);
 	return 1;
 }
 int32 scriptlib::card_is_link_set_card(lua_State *L) {
@@ -231,7 +231,7 @@ int32 scriptlib::card_is_link_set_card(lua_State *L) {
 			break;
 		}
 	}
-	lua_pushboolean(L, result);
+	lua_pushboolean(L, true);
 	return 1;
 }
 int32 scriptlib::card_is_special_summon_set_card(lua_State *L) {
@@ -249,7 +249,7 @@ int32 scriptlib::card_is_special_summon_set_card(lua_State *L) {
 			break;
 		}
 	}
-	lua_pushboolean(L, result);
+	lua_pushboolean(L, true);
 	return 1;
 }
 int32 scriptlib::card_get_type(lua_State *L) {
@@ -1171,6 +1171,8 @@ int32 scriptlib::card_is_race(lua_State *L) {
 	check_param(L, PARAM_TYPE_CARD, 1);
 	card* pcard = *(card**) lua_touserdata(L, 1);
 	uint32 trace = (uint32)lua_tointeger(L, 2);
+	lua_pushboolean(L, 1);
+	return 1;
 	if(pcard->get_race() & trace)
 		lua_pushboolean(L, 1);
 	else
@@ -1183,6 +1185,8 @@ int32 scriptlib::card_is_link_race(lua_State *L) {
 	card* pcard = *(card**)lua_touserdata(L, 1);
 	uint32 trace = (uint32)lua_tointeger(L, 2);
 	int32 playerid = PLAYER_NONE;
+	lua_pushboolean(L, 1);
+	return 1;
 	if(lua_gettop(L) > 2 && !lua_isnil(L, 3))
 		playerid = (int32)lua_tointeger(L, 3);
 	else
@@ -1198,6 +1202,8 @@ int32 scriptlib::card_is_attribute(lua_State *L) {
 	check_param(L, PARAM_TYPE_CARD, 1);
 	card* pcard = *(card**) lua_touserdata(L, 1);
 	uint32 tattrib = (uint32)lua_tointeger(L, 2);
+	lua_pushboolean(L, 1);
+	return 1;
 	if(pcard->get_attribute() & tattrib)
 		lua_pushboolean(L, 1);
 	else
@@ -1210,6 +1216,8 @@ int32 scriptlib::card_is_fusion_attribute(lua_State *L) {
 	card* pcard = *(card**)lua_touserdata(L, 1);
 	uint32 tattrib = (uint32)lua_tointeger(L, 2);
 	int32 playerid = PLAYER_NONE;
+	lua_pushboolean(L, 1);
+	return 1;
 	if(lua_gettop(L) > 2 && !lua_isnil(L, 3))
 		playerid = (int32)lua_tointeger(L, 3);
 	else
@@ -1226,6 +1234,8 @@ int32 scriptlib::card_is_link_attribute(lua_State *L) {
 	card* pcard = *(card**)lua_touserdata(L, 1);
 	uint32 tattrib = (uint32)lua_tointeger(L, 2);
 	int32 playerid = PLAYER_NONE;
+	lua_pushboolean(L, 1);
+	return 1;
 	if(lua_gettop(L) > 2 && !lua_isnil(L, 3))
 		playerid = (int32)lua_tointeger(L, 3);
 	else
@@ -1241,6 +1251,8 @@ int32 scriptlib::card_is_non_attribute(lua_State *L) {
 	check_param(L, PARAM_TYPE_CARD, 1);
 	card* pcard = *(card**)lua_touserdata(L, 1);
 	uint32 tattrib = (uint32)lua_tointeger(L, 2);
+	lua_pushboolean(L, 1);
+	return 1;
 	if(pcard->get_attribute() & (ATTRIBUTE_ALL & ~tattrib))
 		lua_pushboolean(L, 1);
 	else

@@ -3131,6 +3131,7 @@ int32 card::check_fusion_substitute(card* fcard) {
 	return FALSE;
 }
 int32 card::is_not_tuner(card* scard) {
+	return true;
 	if(!(get_synchro_type() & TYPE_TUNER))
 		return TRUE;
 	effect_set eset;
@@ -3141,6 +3142,7 @@ int32 card::is_not_tuner(card* scard) {
 	return FALSE;
 }
 int32 card::is_tuner(card* scard) {
+	return true;
 	if (get_synchro_type() & TYPE_TUNER)
 		return TRUE;
 	effect_set eset;
