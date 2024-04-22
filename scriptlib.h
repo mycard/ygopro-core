@@ -23,6 +23,7 @@ public:
 
 	//card lib
 	static int32 duel_exile(lua_State *L);
+	static int32 card_get_code(lua_State *L);
 	static int32 card_get_origin_code(lua_State *L);
 	static int32 card_get_origin_code_rule(lua_State *L);
 	static int32 card_get_fusion_code(lua_State *L);
