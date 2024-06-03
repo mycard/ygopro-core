@@ -18,9 +18,9 @@ bool effect_sort_id(const effect* e1, const effect* e2) {
 bool is_continuous_event(uint32 code) {
 	if (code & EVENT_CUSTOM)
 		return false;
-	else if (code & 0xf0000)
+	else if (code & 0xf0000) // EVENT_ADD_COUNTER, EVENT_REMOVE_COUNTER
 		return false;
-	else if (code & 0xf000)
+	else if (code & 0xf000) // EVENT_PHASE_START must be continuous, but other EVENT_PHASE must not be
 		return !!(code & EVENT_PHASE_START);
 	else
 		return continuous_event.find(code) != continuous_event.end();
@@ -177,6 +177,66 @@ int32 effect::check_count_limit(uint8 playerid) {
 	}
 	return TRUE;
 }
+// check activate in hand/in set turn
+int32 effect::get_required_handorset_effects(effect_set* eset, uint8 playerid, const tevent& e, int32 neglect_loc) {
+	eset->clear();
+	if(!(type & EFFECT_TYPE_ACTIVATE))
+		return 1;
+	int32 ecode = 0;
+	if (handler->current.location == LOCATION_HAND && !neglect_loc)
+	{
+		if(handler->data.type & TYPE_TRAP)
+			ecode = EFFECT_TRAP_ACT_IN_HAND;
+		else if((handler->data.type & TYPE_SPELL) && pduel->game_field->infos.turn_player != playerid) {
+			if(handler->data.type & TYPE_QUICKPLAY)
+				ecode = EFFECT_QP_ACT_IN_NTPHAND;
+			else
+				return FALSE;
+		}
+	}
+	else if (handler->current.location == LOCATION_SZONE)
+	{
+		if((handler->data.type & TYPE_TRAP) && handler->get_status(STATUS_SET_TURN))
+			ecode = EFFECT_TRAP_ACT_IN_SET_TURN;
+		if((handler->data.type & TYPE_SPELL) && (handler->data.type & TYPE_QUICKPLAY) && handler->get_status(STATUS_SET_TURN))
+			ecode = EFFECT_QP_ACT_IN_SET_TURN;
+	}
+	if (!ecode)
+		return 1;
+	int32 available = 0;
+	effect_set tmp_eset;
+	handler->filter_effect(ecode, &tmp_eset);
+	if(!tmp_eset.size())
+		return available;
+	effect* oreason = pduel->game_field->core.reason_effect;
+	uint8 op = pduel->game_field->core.reason_player;
+	pduel->game_field->core.reason_player = playerid;
+	pduel->game_field->save_lp_cost();
+	for(int32 i = 0; i < tmp_eset.size(); ++i) {
+		auto peffect = tmp_eset[i];
+		if(peffect->check_count_limit(playerid)) {
+			pduel->game_field->core.reason_effect = peffect;
+			pduel->lua->add_param(peffect, PARAM_TYPE_EFFECT);
+			pduel->lua->add_param(playerid, PARAM_TYPE_INT);
+			pduel->lua->add_param(e.event_cards , PARAM_TYPE_GROUP);
+			pduel->lua->add_param(e.event_player, PARAM_TYPE_INT);
+			pduel->lua->add_param(e.event_value, PARAM_TYPE_INT);
+			pduel->lua->add_param(e.reason_effect , PARAM_TYPE_EFFECT);
+			pduel->lua->add_param(e.reason, PARAM_TYPE_INT);
+			pduel->lua->add_param(e.reason_player, PARAM_TYPE_INT);
+			pduel->lua->add_param(0, PARAM_TYPE_INT);
+			pduel->lua->add_param(this, PARAM_TYPE_EFFECT);
+			if(pduel->lua->check_condition(peffect->cost, 10)) {
+				available = 2;
+				eset->add_item(peffect);
+			}
+		}
+	}
+	pduel->game_field->core.reason_effect = oreason;
+	pduel->game_field->core.reason_player = op;
+	pduel->game_field->restore_lp_cost();
+	return available;
+}
 // check if an EFFECT_TYPE_ACTIONS effect can be activated
 // for triggering effects, it checks EFFECT_FLAG_DAMAGE_STEP, EFFECT_FLAG_SET_AVAILABLE
 int32 effect::is_activateable(uint8 playerid, const tevent& e, int32 neglect_cond, int32 neglect_cost, int32 neglect_target, int32 neglect_loc, int32 neglect_faceup) {
@@ -230,35 +290,9 @@ int32 effect::is_activateable(uint8 playerid, const tevent& e, int32 neglect_con
 					return FALSE;
 			}
 			// check activate in hand/in set turn
-			int32 ecode = 0;
-			if(handler->current.location == LOCATION_HAND && !neglect_loc) {
-				if(handler->data.type & TYPE_TRAP)
-					ecode = EFFECT_TRAP_ACT_IN_HAND;
-				else if((handler->data.type & TYPE_SPELL) && pduel->game_field->infos.turn_player != playerid) {
-					if(handler->data.type & TYPE_QUICKPLAY)
-						ecode = EFFECT_QP_ACT_IN_NTPHAND;
-					else
-						return FALSE;
-				}
-			} else if(handler->current.location == LOCATION_SZONE) {
-				if((handler->data.type & TYPE_TRAP) && handler->get_status(STATUS_SET_TURN))
-					ecode = EFFECT_TRAP_ACT_IN_SET_TURN;
-				if((handler->data.type & TYPE_SPELL) && (handler->data.type & TYPE_QUICKPLAY) && handler->get_status(STATUS_SET_TURN))
-					ecode = EFFECT_QP_ACT_IN_SET_TURN;
-			}
-			if(ecode) {
-				bool available = false;
-				effect_set eset;
-				handler->filter_effect(ecode, &eset);
-				for(int32 i = 0; i < eset.size(); ++i) {
-					if(eset[i]->check_count_limit(playerid)) {
-						available = true;
-						break;
-					}
-				}
-				if(!available)
-					return FALSE;
-			}
+			effect_set eset;
+			if(!get_required_handorset_effects(&eset, playerid, e, neglect_loc))
+				return FALSE;
 			if(handler->is_status(STATUS_FORBIDDEN))
 				return FALSE;
 			if(handler->is_affected_by_effect(EFFECT_CANNOT_TRIGGER))
@@ -473,7 +507,7 @@ int32 effect::is_target(card* pcard) {
 			&& !pcard->is_position(POS_FACEUP))
 		return FALSE;
 	if(!is_flag(EFFECT_FLAG_IGNORE_RANGE)) {
-		if(pcard->get_status(STATUS_SUMMONING | STATUS_SUMMON_DISABLED | STATUS_ACTIVATE_DISABLED | STATUS_SPSUMMON_STEP))
+		if(pcard->is_treated_as_not_on_field())
 			return FALSE;
 		if(is_flag(EFFECT_FLAG_SPSUM_PARAM))
 			return FALSE;

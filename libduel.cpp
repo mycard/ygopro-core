@@ -922,7 +922,7 @@ int32 scriptlib::duel_return_to_field(lua_State *L) {
 	pcard->enable_field_effect(false);
 	pduel->game_field->adjust_instant();
 	pduel->game_field->refresh_location_info_instant();
-	pduel->game_field->move_to_field(pcard, pcard->previous.controler, pcard->previous.controler, pcard->previous.location, pos, TRUE, 1, pcard->previous.pzone, zone);
+	pduel->game_field->move_to_field(pcard, pcard->previous.controler, pcard->previous.controler, pcard->previous.location, pos, TRUE, RETURN_TEMP_REMOVE_TO_FIELD, pcard->previous.pzone, zone);
 	return lua_yieldk(L, 0, (lua_KContext)pduel, [](lua_State *L, int32 status, lua_KContext ctx) {
 		duel* pduel = (duel*)ctx;
 		lua_pushboolean(L, pduel->game_field->returns.ivalue[0]);
@@ -1569,6 +1569,14 @@ int32 scriptlib::duel_disable_self_destroy_check(lua_State* L) {
 	if(lua_gettop(L) > 0)
 		disable = lua_toboolean(L, 1);
 	pduel->game_field->core.selfdes_disabled = disable;
+	return 0;
+}
+int32 scriptlib::duel_preserve_select_deck_seq(lua_State* L) {
+	duel* pduel = interpreter::get_duel_info(L);
+	uint8 preserve = TRUE;
+	if(lua_gettop(L) > 0)
+		preserve = lua_toboolean(L, 1);
+	pduel->game_field->core.select_deck_seq_preserved = preserve;
 	return 0;
 }
 int32 scriptlib::duel_shuffle_deck(lua_State *L) {
@@ -2455,8 +2463,12 @@ int32 scriptlib::duel_disable_attack(lua_State *L) {
 }
 int32 scriptlib::duel_chain_attack(lua_State *L) {
 	duel* pduel = interpreter::get_duel_info(L);
+	card* attacker = pduel->game_field->core.attacker;
+	if(!attacker || !attacker->is_affect_by_effect(pduel->game_field->core.reason_effect)) {
+		return 0;
+	}
 	pduel->game_field->core.chain_attack = TRUE;
-	pduel->game_field->core.chain_attacker_id = pduel->game_field->core.attacker->fieldid;
+	pduel->game_field->core.chain_attacker_id = attacker->fieldid;
 	if(lua_gettop(L) > 0) {
 		check_param(L, PARAM_TYPE_CARD, 1);
 		pduel->game_field->core.chain_attack_target = *(card**) lua_touserdata(L, 1);
@@ -3193,9 +3205,19 @@ int32 scriptlib::duel_get_synchro_material(lua_State *L) {
 	int32 playerid = (int32)lua_tointeger(L, 1);
 	if(playerid != 0 && playerid != 1)
 		return 0;
+	uint32 facedown = FALSE;
+	if (lua_gettop(L) >= 2)
+		facedown = lua_toboolean(L, 2);
 	duel* pduel = interpreter::get_duel_info(L);
+	group::card_set mats;
+	pduel->game_field->get_synchro_material(playerid, &mats);
 	group* pgroup = pduel->new_group();
-	pduel->game_field->get_synchro_material(playerid, &pgroup->container);
+	for (auto cit = mats.begin(); cit != mats.end(); ++cit) {
+		card* pcard = *cit;
+		if (pcard->current.location == LOCATION_MZONE && !pcard->is_position(POS_FACEUP) && !facedown)
+			continue;
+		pgroup->container.insert(*cit);
+	}
 	interpreter::group2value(L, pgroup);
 	return 1;
 }
@@ -3230,7 +3252,8 @@ int32 scriptlib::duel_select_synchro_material(lua_State *L) {
 	lua_pushvalue(L, 3);
 	lua_pushvalue(L, 4);
 	lua_pushvalue(L, 2);
-	return lua_yield(L, 3);
+	lua_xmove(L, pduel->lua->lua_state, 3);
+	return lua_yield(L, 0);
 }
 int32 scriptlib::duel_check_synchro_material(lua_State *L) {
 	check_param_count(L, 5);
@@ -3289,7 +3312,8 @@ int32 scriptlib::duel_select_tuner_material(lua_State *L) {
 	lua_pushvalue(L, 4);
 	lua_pushvalue(L, 5);
 	lua_pushvalue(L, 2);
-	return lua_yield(L, 3);
+	lua_xmove(L, pduel->lua->lua_state, 3);
+	return lua_yield(L, 0);
 }
 int32 scriptlib::duel_check_tuner_material(lua_State *L) {
 	check_param_count(L, 6);
@@ -3704,11 +3728,23 @@ int32 scriptlib::duel_hint(lua_State * L) {
 	if(htype == HINT_OPSELECTED)
 		playerid = 1 - playerid;
 	duel* pduel = interpreter::get_duel_info(L);
+	if(htype == HINT_SELECTMSG)
+		pduel->game_field->core.last_select_hint[playerid] = desc;
 	pduel->write_buffer8(MSG_HINT);
 	pduel->write_buffer8(htype);
 	pduel->write_buffer8(playerid);
 	pduel->write_buffer32(desc);
 	return 0;
+}
+int32 scriptlib::duel_get_last_select_hint(lua_State* L) {
+	duel* pduel = interpreter::get_duel_info(L);
+	uint8 playerid = pduel->game_field->core.reason_player;
+	if(lua_gettop(L) >= 1)
+		playerid = (uint8)lua_tointeger(L, 1);
+	if(playerid != 0 && playerid != 1)
+		return 0;
+	lua_pushinteger(L, pduel->game_field->core.last_select_hint[playerid]);
+	return 1;
 }
 int32 scriptlib::duel_hint_selection(lua_State *L) {
 	check_param_count(L, 1);
@@ -4361,7 +4397,7 @@ int32 scriptlib::duel_is_player_can_flipsummon(lua_State * L) {
 	return 1;
 }
 int32 scriptlib::duel_is_player_can_spsummon_monster(lua_State * L) {
-	check_param_count(L, 9);
+	check_param_count(L, 2);
 	int32 playerid = (int32)lua_tointeger(L, 1);
 	if(playerid != 0 && playerid != 1) {
 		lua_pushboolean(L, 0);
@@ -4372,21 +4408,19 @@ int32 scriptlib::duel_is_player_can_spsummon_monster(lua_State * L) {
 	::read_card(code, &dat);
 	dat.code = code;
 	dat.alias = 0;
-	if(!lua_isnil(L, 3)) {
-		uint64 setcode_list = lua_tointeger(L, 3);
-		dat.set_setcode(setcode_list);
-	}
-	if(!lua_isnil(L, 4))
+	if(lua_gettop(L) >= 3 && !lua_isnil(L, 3))
+		dat.set_setcode((uint64)lua_tointeger(L, 3));
+	if(lua_gettop(L) >= 4 && !lua_isnil(L, 4))
 		dat.type = (uint32)lua_tointeger(L, 4);
-	if(!lua_isnil(L, 5))
+	if(lua_gettop(L) >= 5 && !lua_isnil(L, 5))
 		dat.attack = (int32)lua_tointeger(L, 5);
-	if(!lua_isnil(L, 6))
+	if(lua_gettop(L) >= 6 && !lua_isnil(L, 6))
 		dat.defense = (int32)lua_tointeger(L, 6);
-	if(!lua_isnil(L, 7))
+	if(lua_gettop(L) >= 7 && !lua_isnil(L, 7))
 		dat.level = (uint32)lua_tointeger(L, 7);
-	if(!lua_isnil(L, 8))
+	if(lua_gettop(L) >= 8 && !lua_isnil(L, 8))
 		dat.race = (uint32)lua_tointeger(L, 8);
-	if(!lua_isnil(L, 9))
+	if(lua_gettop(L) >= 9 && !lua_isnil(L, 9))
 		dat.attribute = (uint32)lua_tointeger(L, 9);
 	int32 pos = POS_FACEUP;
 	int32 toplayer = playerid;
@@ -4862,6 +4896,7 @@ static const struct luaL_Reg duellib[] = {
 	{ "DiscardHand", scriptlib::duel_discard_hand },
 	{ "DisableShuffleCheck", scriptlib::duel_disable_shuffle_check },
 	{ "DisableSelfDestroyCheck", scriptlib::duel_disable_self_destroy_check },
+	{ "PreserveSelectDeckSequence", scriptlib::duel_preserve_select_deck_seq },
 	{ "ShuffleDeck", scriptlib::duel_shuffle_deck },
 	{ "ShuffleExtra", scriptlib::duel_shuffle_extra },
 	{ "ShuffleHand", scriptlib::duel_shuffle_hand },
@@ -4966,6 +5001,7 @@ static const struct luaL_Reg duellib[] = {
 	{ "CheckRemoveOverlayCard", scriptlib::duel_check_remove_overlay_card },
 	{ "RemoveOverlayCard", scriptlib::duel_remove_overlay_card },
 	{ "Hint", scriptlib::duel_hint },
+	{ "GetLastSelectHint", scriptlib::duel_get_last_select_hint },
 	{ "HintSelection", scriptlib::duel_hint_selection },
 	{ "SelectEffectYesNo", scriptlib::duel_select_effect_yesno },
 	{ "SelectYesNo", scriptlib::duel_select_yesno },

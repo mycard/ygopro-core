@@ -1352,7 +1352,7 @@ int32 field::trap_monster_adjust(uint16 step) {
 				pcard->reset(RESET_TURN_SET, RESET_EVENT);
 				if(core.duel_rule <= 4)
 					refresh_location_info_instant();
-				move_to_field(pcard, tp, tp, LOCATION_SZONE, pcard->current.position, FALSE, 2);
+				move_to_field(pcard, tp, tp, LOCATION_SZONE, pcard->current.position, FALSE, RETURN_TRAP_MONSTER_TO_SZONE);
 			}
 			tp = 1 - tp;
 		}
@@ -3906,7 +3906,7 @@ int32 field::send_to(uint16 step, group * targets, effect * reason_effect, uint3
 			uint8 dest = pcard->sendto_param.location;
 			if(!(reason & REASON_RULE) &&
 			        (pcard->get_status(STATUS_SUMMONING | STATUS_SPSUMMON_STEP)
-			         || (!(pcard->current.reason & (REASON_COST | REASON_SUMMON | REASONS_PROCEDURE)) && !pcard->is_affect_by_effect(pcard->current.reason_effect))
+			         || ((pcard->current.reason & REASON_EFFECT) && !pcard->is_affect_by_effect(pcard->current.reason_effect))
 			         || (dest == LOCATION_HAND && !pcard->is_capable_send_to_hand(core.reason_player))
 			         || (dest == LOCATION_DECK && !pcard->is_capable_send_to_deck(core.reason_player, send_activating))
 			         || (dest == LOCATION_REMOVED && !pcard->is_removeable(core.reason_player, pcard->sendto_param.position, reason))
@@ -3926,6 +3926,7 @@ int32 field::send_to(uint16 step, group * targets, effect * reason_effect, uint3
 		return FALSE;
 	}
 	case 1: {
+		// the entrance of release, destroy
 		for(auto& pcard : targets->container) {
 			add_process(PROCESSOR_SENDTO_REPLACE, 0, nullptr, targets, 0, 0, 0, 0, pcard);
 		}
@@ -4364,8 +4365,11 @@ int32 field::send_to(uint16 step, group * targets, effect * reason_effect, uint3
 				raise_single_event(pcard, 0, EVENT_DESTROYED, pcard->current.reason_effect, pcard->current.reason, pcard->current.reason_player, 0, 0);
 			}
 			if(pcard->xyz_materials.size()) {
+				pcard->xyz_materials_previous_count_onfield = pcard->xyz_materials.size();
 				for(auto& mcard : pcard->xyz_materials)
 					overlays.insert(mcard);
+			} else {
+				pcard->xyz_materials_previous_count_onfield = 0;
 			}
 			raise_single_event(pcard, 0, EVENT_MOVE, pcard->current.reason_effect, pcard->current.reason, pcard->current.reason_player, 0, 0);
 		}
@@ -4546,7 +4550,7 @@ int32 field::move_to_field(uint16 step, card* target, uint32 enable, uint32 ret,
 	switch(step) {
 	case 0: {
 		returns.ivalue[0] = FALSE;
-		if((ret == 1) && (!(target->current.reason & REASON_TEMPORARY) || (target->current.reason_effect->owner != core.reason_effect->owner)))
+		if((ret == RETURN_TEMP_REMOVE_TO_FIELD) && (!(target->current.reason & REASON_TEMPORARY) || (target->current.reason_effect->owner != core.reason_effect->owner)))
 			return TRUE;
 		if(location == LOCATION_SZONE && zone == 0x1 << 5 && (target->data.type & TYPE_FIELD) && (target->data.type & TYPE_SPELL)) {
 			card* pcard = get_field_card(playerid, LOCATION_SZONE, 5);
@@ -4581,7 +4585,7 @@ int32 field::move_to_field(uint16 step, card* target, uint32 enable, uint32 ret,
 			uint32 flag;
 			uint32 lreason = (target->current.location == LOCATION_MZONE) ? LOCATION_REASON_CONTROL : LOCATION_REASON_TOFIELD;
 			int32 ct = get_useable_count(target, playerid, location, move_player, lreason, zone, &flag);
-			if((ret == 1) && (ct <= 0 || target->is_status(STATUS_FORBIDDEN) || !(positions & POS_FACEDOWN) && check_unique_onfield(target, playerid, location))) {
+			if((ret == RETURN_TEMP_REMOVE_TO_FIELD) && (ct <= 0 || target->is_status(STATUS_FORBIDDEN) || !(positions & POS_FACEDOWN) && check_unique_onfield(target, playerid, location))) {
 				core.units.begin()->step = 3;
 				send_to(target, core.reason_effect, REASON_RULE, core.reason_player, PLAYER_NONE, LOCATION_GRAVE, 0, 0);
 				return FALSE;
@@ -4600,7 +4604,7 @@ int32 field::move_to_field(uint16 step, card* target, uint32 enable, uint32 ret,
 					}
 				}
 			}
-			if(ret == 2 && core.duel_rule <= 4) {
+			if(ret == RETURN_TRAP_MONSTER_TO_SZONE && core.duel_rule <= 4) {
 				returns.bvalue[2] = target->previous.sequence;
 				return FALSE;
 			}
@@ -4628,7 +4632,7 @@ int32 field::move_to_field(uint16 step, card* target, uint32 enable, uint32 ret,
 		uint32 seq = returns.bvalue[2];
 		if(location == LOCATION_SZONE && zone == 0x1 << 5 && (target->data.type & TYPE_FIELD) && (target->data.type & TYPE_SPELL))
 			seq = 5;
-		if(ret != 1) {
+		if(ret != RETURN_TEMP_REMOVE_TO_FIELD) {
 			if(location != target->current.location) {
 				uint32 resetflag = 0;
 				if(location & LOCATION_ONFIELD)
@@ -4642,13 +4646,13 @@ int32 field::move_to_field(uint16 step, card* target, uint32 enable, uint32 ret,
 				target->reset(resetflag, RESET_EVENT);
 				target->clear_card_target();
 			}
-			if(!(target->current.location & LOCATION_ONFIELD))
-				target->clear_relate_effect();
 		}
-		if(ret == 1)
+		if(!(target->current.location & LOCATION_ONFIELD))
+			target->clear_relate_effect();
+		if(ret == RETURN_TEMP_REMOVE_TO_FIELD)
 			target->current.reason &= ~REASON_TEMPORARY;
 		if(ret == 0 && location != target->current.location
-			|| ret == 1 && target->turnid != infos.turn_id) {
+			|| ret == RETURN_TEMP_REMOVE_TO_FIELD && target->turnid != infos.turn_id) {
 			target->set_status(STATUS_SUMMON_TURN, FALSE);
 			target->set_status(STATUS_FLIP_SUMMON_TURN, FALSE);
 			target->set_status(STATUS_SPSUMMON_TURN, FALSE);
@@ -4696,7 +4700,7 @@ int32 field::move_to_field(uint16 step, card* target, uint32 enable, uint32 ret,
 		target->set_status(STATUS_LEAVE_CONFIRMED, FALSE);
 		pduel->write_buffer32(target->get_info_location());
 		pduel->write_buffer32(target->current.reason);
-		if((target->current.location != LOCATION_MZONE)) {
+		if(target->current.location != LOCATION_MZONE) {
 			if(target->equiping_cards.size()) {
 				destroy(&target->equiping_cards, 0, REASON_LOST_TARGET + REASON_RULE, PLAYER_NONE);
 				for(auto csit = target->equiping_cards.begin(); csit != target->equiping_cards.end();) {
@@ -4705,9 +4709,12 @@ int32 field::move_to_field(uint16 step, card* target, uint32 enable, uint32 ret,
 				}
 			}
 			if(target->xyz_materials.size()) {
+				target->xyz_materials_previous_count_onfield = target->xyz_materials.size();
 				card_set overlays;
 				overlays.insert(target->xyz_materials.begin(), target->xyz_materials.end());
 				send_to(&overlays, 0, REASON_LOST_OVERLAY + REASON_RULE, PLAYER_NONE, PLAYER_NONE, LOCATION_GRAVE, 0, POS_FACEUP);
+			} else {
+				target->xyz_materials_previous_count_onfield = 0;
 			}
 		}
 		if((target->previous.location == LOCATION_SZONE) && target->equiping_target)
@@ -4763,9 +4770,9 @@ int32 field::move_to_field(uint16 step, card* target, uint32 enable, uint32 ret,
 				}
 			}
 		}
-		if(enable || ((ret == 1) && target->is_position(POS_FACEUP)))
+		if(enable || ((ret == RETURN_TEMP_REMOVE_TO_FIELD) && target->is_position(POS_FACEUP)))
 			target->enable_field_effect(true);
-		if(ret == 1 && target->current.location == LOCATION_MZONE && !(target->data.type & TYPE_MONSTER))
+		if(ret == RETURN_TEMP_REMOVE_TO_FIELD && target->current.location == LOCATION_MZONE && !(target->data.type & TYPE_MONSTER))
 			send_to(target, 0, REASON_RULE, PLAYER_NONE, PLAYER_NONE, LOCATION_GRAVE, 0, 0);
 		else {
 			if(target->previous.location == LOCATION_GRAVE) {
@@ -4948,7 +4955,7 @@ int32 field::change_position(uint16 step, group * targets, effect * reason_effec
 				pcard->unequip();
 			if(trapmonster) {
 				refresh_location_info_instant();
-				move_to_field(pcard, pcard->current.controler, pcard->current.controler, LOCATION_SZONE, POS_FACEDOWN, FALSE, 2);
+				move_to_field(pcard, pcard->current.controler, pcard->current.controler, LOCATION_SZONE, POS_FACEDOWN, FALSE, RETURN_TRAP_MONSTER_TO_SZONE);
 				raise_single_event(pcard, 0, EVENT_SSET, reason_effect, 0, reason_player, 0, 0);
 				ssets.insert(pcard);
 			}
@@ -5309,7 +5316,7 @@ int32 field::select_synchro_material(int16 step, uint8 playerid, card* pcard, in
 	case 1: {
 		if(returns.ivalue[0] == -1) {
 			lua_pop(pduel->lua->current_state, 3);
-			pduel->lua->add_param((void*)0, PARAM_TYPE_GROUP);
+			pduel->lua->add_param(nullptr, PARAM_TYPE_GROUP);
 			core.limit_tuner = 0;
 			return TRUE;
 		}
@@ -5345,12 +5352,12 @@ int32 field::select_synchro_material(int16 step, uint8 playerid, card* pcard, in
 	}
 	case 3: {
 		card* tuner = core.limit_tuner;
-		effect* ptuner = tuner->is_affected_by_effect(EFFECT_TUNER_MATERIAL_LIMIT);
-		if(ptuner && ptuner->is_flag(EFFECT_FLAG_SPSUM_PARAM)) {
-			if(ptuner->s_range && ptuner->s_range > min)
-				min = ptuner->s_range;
-			if(ptuner->o_range && ptuner->o_range < max)
-				max = ptuner->o_range;
+		effect* tuner_limit = tuner->is_affected_by_effect(EFFECT_TUNER_MATERIAL_LIMIT);
+		if(tuner_limit && tuner_limit->is_flag(EFFECT_FLAG_SPSUM_PARAM)) {
+			if(tuner_limit->s_range && tuner_limit->s_range > min)
+				min = tuner_limit->s_range;
+			if(tuner_limit->o_range && tuner_limit->o_range < max)
+				max = tuner_limit->o_range;
 			core.units.begin()->arg2 = min + (max << 16);
 		}
 		int32 mzone_limit = get_mzone_limit(playerid, playerid, LOCATION_REASON_TOFIELD);
@@ -5391,10 +5398,10 @@ int32 field::select_synchro_material(int16 step, uint8 playerid, card* pcard, in
 	case 4: {
 		card* tuner = core.limit_tuner;
 		int32 location = LOCATION_MZONE;
-		effect* ptuner = tuner->is_affected_by_effect(EFFECT_TUNER_MATERIAL_LIMIT);
-		if(ptuner) {
-			if(ptuner->value)
-				location = ptuner->value;
+		effect* tuner_limit = tuner->is_affected_by_effect(EFFECT_TUNER_MATERIAL_LIMIT);
+		if(tuner_limit) {
+			if(tuner_limit->value)
+				location = tuner_limit->value;
 		}
 		effect* pcheck = tuner->is_affected_by_effect(EFFECT_SYNCHRO_CHECK);
 		core.must_select_cards.clear();
@@ -5420,14 +5427,14 @@ int32 field::select_synchro_material(int16 step, uint8 playerid, card* pcard, in
 			for(auto& pm : mg->container) {
 				if(pm == tuner || pm == smat || must_list.find(pm) != must_list.end() || !pm->is_can_be_synchro_material(pcard, tuner))
 					continue;
-				if(ptuner) {
-					if(ptuner->target) {
-						pduel->lua->add_param(ptuner, PARAM_TYPE_EFFECT);
+				if(tuner_limit) {
+					if(tuner_limit->target) {
+						pduel->lua->add_param(tuner_limit, PARAM_TYPE_EFFECT);
 						pduel->lua->add_param(pm, PARAM_TYPE_CARD);
-						if(!pduel->lua->get_function_value(ptuner->target, 2))
+						if(!pduel->lua->get_function_value(tuner_limit->target, 2))
 							continue;
 					}
-					if(ptuner->value && !(pm->current.location & location))
+					if(tuner_limit->value && !(pm->current.location & location))
 						continue;
 				}
 				if(pcheck)
@@ -5441,14 +5448,14 @@ int32 field::select_synchro_material(int16 step, uint8 playerid, card* pcard, in
 			}
 		} else {
 			card_set cv;
-			get_synchro_material(playerid, &cv, ptuner);
+			get_synchro_material(playerid, &cv, tuner_limit);
 			for(auto& pm : cv) {
 				if(!pm || pm == tuner || pm == smat || must_list.find(pm) != must_list.end() || !pm->is_can_be_synchro_material(pcard, tuner))
 					continue;
-				if(ptuner && ptuner->target) {
-					pduel->lua->add_param(ptuner, PARAM_TYPE_EFFECT);
+				if(tuner_limit && tuner_limit->target) {
+					pduel->lua->add_param(tuner_limit, PARAM_TYPE_EFFECT);
 					pduel->lua->add_param(pm, PARAM_TYPE_CARD);
-					if(!pduel->lua->get_function_value(ptuner->target, 2))
+					if(!pduel->lua->get_function_value(tuner_limit->target, 2))
 						continue;
 				}
 				if(pcheck)
@@ -5676,7 +5683,7 @@ int32 field::select_xyz_material(int16 step, uint8 playerid, uint32 lv, card* sc
 	}
 	case 1: {
 		if(returns.ivalue[0] == -1) {
-			pduel->lua->add_param((void*)0, PARAM_TYPE_GROUP);
+			pduel->lua->add_param(nullptr, PARAM_TYPE_GROUP);
 			return TRUE;
 		}
 		int32 pv = 0;
@@ -5843,7 +5850,7 @@ int32 field::select_xyz_material(int16 step, uint8 playerid, uint32 lv, card* sc
 	}
 	case 4: {
 		if(returns.ivalue[0] == -1) {
-			pduel->lua->add_param((void*)0, PARAM_TYPE_GROUP);
+			pduel->lua->add_param(nullptr, PARAM_TYPE_GROUP);
 			return TRUE;
 		}
 		card* pcard = core.select_cards[returns.bvalue[1]];
@@ -5899,7 +5906,7 @@ int32 field::select_xyz_material(int16 step, uint8 playerid, uint32 lv, card* sc
 	}
 	case 6: {
 		if(returns.ivalue[0] == -1) {
-			pduel->lua->add_param((void*)0, PARAM_TYPE_GROUP);
+			pduel->lua->add_param(nullptr, PARAM_TYPE_GROUP);
 			return TRUE;
 		}
 		group* pgroup = pduel->new_group(core.operated_set);
@@ -5923,7 +5930,7 @@ int32 field::select_xyz_material(int16 step, uint8 playerid, uint32 lv, card* sc
 	}
 	case 8: {
 		if(returns.ivalue[0] == -1) {
-			pduel->lua->add_param((void*)0, PARAM_TYPE_GROUP);
+			pduel->lua->add_param(nullptr, PARAM_TYPE_GROUP);
 			return TRUE;
 		}
 		int32 pv = 0;
@@ -6029,7 +6036,7 @@ int32 field::select_xyz_material(int16 step, uint8 playerid, uint32 lv, card* sc
 	}
 	case 22: {
 		if(returns.ivalue[0] == -1) {
-			pduel->lua->add_param((void*)0, PARAM_TYPE_GROUP);
+			pduel->lua->add_param(nullptr, PARAM_TYPE_GROUP);
 			return TRUE;
 		}
 		int32 pv = 0;

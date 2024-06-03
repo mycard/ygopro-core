@@ -13,20 +13,16 @@
 #include "effect.h"
 #include "group.h"
 #include "ocgapi.h"
-
-inline void write_buffer_vector(std::vector<byte>& buffer, const void*& data, int size) {
-	if (size > 0) {
-		const auto len = buffer.size();
-		buffer.resize(len + size);
-		std::memcpy(&buffer[len], data, size);
-	}
-}
+#include "buffer.h"
 
 duel::duel() {
 	lua = new interpreter(this);
 	game_field = new field(this);
 	game_field->temp_card = new_card(0);
 	message_buffer.reserve(SIZE_MESSAGE_BUFFER);
+#ifdef _WIN32
+	_set_error_mode(_OUT_TO_MSGBOX);
+#endif // _WIN32
 }
 duel::~duel() {
 	for(auto& pcard : cards)
@@ -122,16 +118,16 @@ void duel::restore_assumes() {
 	assumes.clear();
 }
 void duel::write_buffer(const void* data, int size) {
-	write_buffer_vector(message_buffer, data, size);
+	vector_write_block(message_buffer, data, size);
 }
 void duel::write_buffer32(uint32 value) {
-	write_buffer(&value, sizeof(value));
+	vector_write<uint32_t>(message_buffer, value);
 }
 void duel::write_buffer16(uint16 value) {
-	write_buffer(&value, sizeof(value));
+	vector_write<uint16_t>(message_buffer, value);
 }
 void duel::write_buffer8(uint8 value) {
-	write_buffer(&value, sizeof(value));
+	vector_write<unsigned char>(message_buffer, value);
 }
 void duel::clear_buffer() {
 	message_buffer.clear();

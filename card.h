@@ -11,6 +11,7 @@
 #include "common.h"
 #include "effectset.h"
 #include "card_data.h"
+#include "sort.h"
 #include <set>
 #include <map>
 #include <unordered_set>
@@ -198,6 +199,7 @@ public:
 	card_set effect_target_owner;
 	card_set effect_target_cards;
 	card_vector xyz_materials;
+	int32 xyz_materials_previous_count_onfield;
 	effect_container single_effect;
 	effect_container field_effect;
 	effect_container equip_effect;
@@ -268,6 +270,9 @@ public:
 	uint32 get_column_zone(int32 location);
 	void get_column_cards(card_set* cset);
 	int32 is_all_column();
+	uint8 get_select_sequence(uint8 *deck_seq_pointer);
+	uint32 get_select_info_location(uint8 *deck_seq_pointer);
+	int32 is_treated_as_not_on_field();
 
 	void equip(card* target, uint32 send_msg = TRUE);
 	void unequip();

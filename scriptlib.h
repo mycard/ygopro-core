@@ -91,6 +91,7 @@ public:
 	static int32 card_get_previous_race_onfield(lua_State *L);
 	static int32 card_get_previous_attack_onfield(lua_State *L);
 	static int32 card_get_previous_defense_onfield(lua_State *L);
+	static int32 card_get_previous_overlay_count_onfield(lua_State *L);
 	static int32 card_get_owner(lua_State *L);
 	static int32 card_get_controler(lua_State *L);
 	static int32 card_get_previous_controler(lua_State *L);
@@ -462,6 +463,7 @@ public:
 	static int32 duel_discard_hand(lua_State *L);
 	static int32 duel_disable_shuffle_check(lua_State *L);
 	static int32 duel_disable_self_destroy_check(lua_State *L);
+	static int32 duel_preserve_select_deck_seq(lua_State *L);
 	static int32 duel_shuffle_deck(lua_State *L);
 	static int32 duel_shuffle_extra(lua_State *L);
 	static int32 duel_shuffle_hand(lua_State *L);
@@ -568,6 +570,7 @@ public:
 	static int32 duel_remove_overlay_card(lua_State *L);
 
 	static int32 duel_hint(lua_State *L);
+	static int32 duel_get_last_select_hint(lua_State *L);
 	static int32 duel_hint_selection(lua_State *L);
 	static int32 duel_select_effect_yesno(lua_State *L);
 	static int32 duel_select_yesno(lua_State *L);

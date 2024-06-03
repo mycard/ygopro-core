@@ -12,6 +12,7 @@
 #include "group.h"
 #include "interpreter.h"
 #include "ocgapi.h"
+#include "buffer.h"
 #include <algorithm>
 
 const std::unordered_map<uint32, uint32> card::second_code = {
@@ -22,9 +23,7 @@ const std::unordered_map<uint32, uint32> card::second_code = {
 	{CARD_HERMOS, 10000070u}
 };
 
-bool card_sort::operator()(void* const & p1, void* const & p2) const {
-	card* c1 = (card*)p1;
-	card* c2 = (card*)p2;
+bool card_sort::operator()(card* const& c1, card* const& c2) const {
 	return c1->cardid < c2->cardid;
 }
 bool card_state::is_location(int32 loc) const {
@@ -96,6 +95,37 @@ bool card::card_operation_sort(card* c1, card* c2) {
 			return c1->overlay_target->current.sequence < c2->overlay_target->current.sequence;
 		else
 			return c1->current.sequence < c2->current.sequence;
+	} else if (c1->current.location & LOCATION_DECK && cp1 == pduel->game_field->core.selecting_player && !pduel->game_field->core.select_deck_seq_preserved) {
+		// if deck reversed and the card being at the top, it should go first
+		if(pduel->game_field->core.deck_reversed) {
+			if(c1->current.sequence == pduel->game_field->player[cp1].list_main.size() - 1)
+				return false;
+			if(c2->current.sequence == pduel->game_field->player[cp2].list_main.size() - 1)
+				return true;
+		}
+		// faceup deck cards should go at the very first
+		auto c1_faceup = c1->current.position & POS_FACEUP;
+		auto c2_faceup = c2->current.position & POS_FACEUP;
+		if(c1_faceup || c2_faceup) {
+			if(c1_faceup && c2_faceup)
+				return c1->current.sequence > c2->current.sequence;
+			else
+				return c2_faceup;
+		}
+		// sort deck as card property
+		auto c1_type = c1->data.type & 0x7;
+		auto c2_type = c2->data.type & 0x7;
+		// monster should go before spell, and then trap
+		if(c1_type != c2_type)
+			return c1_type > c2_type;
+		if(c1_type & TYPE_MONSTER) {
+			if (c1->data.level != c2->data.level)
+				return c1->data.level < c2->data.level;
+			// TODO: more sorts here
+		}
+		if(c1->data.code != c2->data.code)
+			return c1->data.code > c2->data.code;
+		return c1->current.sequence > c2->current.sequence;
 	} else {
 		if(c1->current.location & (LOCATION_DECK | LOCATION_EXTRA | LOCATION_GRAVE | LOCATION_REMOVED))
 			return c1->current.sequence > c2->current.sequence;
@@ -143,19 +173,19 @@ card::card(duel* pd) {
 	assume_type = 0;
 	assume_value = 0;
 	spsummon_code = 0;
+	xyz_materials_previous_count_onfield = 0;
 	current.controler = PLAYER_NONE;
 }
-inline void update_cache(uint32& tdata, uint32& cache, int32*& p, uint32& query_flag, const uint32 flag) {
+inline void update_cache(uint32& tdata, uint32& cache, byte*& p, uint32& query_flag, const uint32 flag) {
 	if (tdata != cache) {
 		cache = tdata;
-		*p = tdata;
-		++p;
+		buffer_write<uint32_t>(p, tdata);
 	}
 	else
 		query_flag &= ~flag;
 }
 int32 card::get_infos(byte* buf, uint32 query_flag, int32 use_cache) {
-	int32* p = (int32*)buf;
+	byte* p = buf;
 	std::pair<int32, int32> atk_def(-10, -10);
 	std::pair<int32, int32> base_atk_def(-10, -10);
 	if ((query_flag & QUERY_ATTACK) || (query_flag & QUERY_DEFENSE)) {
@@ -165,15 +195,13 @@ int32 card::get_infos(byte* buf, uint32 query_flag, int32 use_cache) {
 		base_atk_def = get_base_atk_def();
 	}
 	//first 8 bytes: data length, query flag
-	p += 2;
+	p += 8;
 	if (query_flag & QUERY_CODE) {
-		*p = data.code;
-		++p;
+		buffer_write<uint32_t>(p, data.code);
 	}
 	if (query_flag & QUERY_POSITION) {
 		uint32 tdata = get_info_location();
-		*p = tdata;
-		++p;
+		buffer_write<uint32_t>(p, tdata);
 		if (q_cache.info_location != tdata) {
 			q_cache.clear_cache();
 			q_cache.info_location = tdata;
@@ -182,59 +210,54 @@ int32 card::get_infos(byte* buf, uint32 query_flag, int32 use_cache) {
 	}
 	if(!use_cache) {
 		if (query_flag & QUERY_ALIAS) {
-			*p = get_code();
-			q_cache.current_code = *p;
-			++p;
+			uint32 tdata = get_code();
+			buffer_write<uint32_t>(p, tdata);
+			q_cache.current_code = tdata;
 		}
 		if (query_flag & QUERY_TYPE) {
-			*p = get_type();
-			q_cache.type = *p;
-			++p;
+			uint32 tdata = get_type();
+			buffer_write<uint32_t>(p, tdata);
+			q_cache.type = tdata;
 		}
 		if (query_flag & QUERY_LEVEL) {
-			*p = get_level();
-			q_cache.level = *p;
-			++p;
+			uint32 tdata = get_level();
+			buffer_write<uint32_t>(p, tdata);
+			q_cache.level = tdata;
 		}
 		if (query_flag & QUERY_RANK) {
-			*p = get_rank();
-			q_cache.rank = *p;
-			++p;
+			uint32 tdata = get_rank();
+			buffer_write<uint32_t>(p, tdata);
+			q_cache.rank = tdata;
 		}
 		if (query_flag & QUERY_ATTRIBUTE) {
-			*p = get_attribute();
-			q_cache.attribute = *p;
-			++p;
+			uint32 tdata = get_attribute();
+			buffer_write<uint32_t>(p, tdata);
+			q_cache.attribute = tdata;
 		}
 		if (query_flag & QUERY_RACE) {
-			*p = get_race();
-			q_cache.race = *p;
-			++p;
+			uint32 tdata = get_race();
+			buffer_write<uint32_t>(p, tdata);
+			q_cache.race = tdata;
 		}
 		if (query_flag & QUERY_ATTACK) {
-			*p = atk_def.first;
+			buffer_write<int32_t>(p, atk_def.first);
 			q_cache.attack = atk_def.first;
-			++p;
 		}
 		if (query_flag & QUERY_DEFENSE) {
-			*p = atk_def.second;
+			buffer_write<int32_t>(p, atk_def.second);
 			q_cache.defense = atk_def.second;
-			++p;
 		}
 		if (query_flag & QUERY_BASE_ATTACK) {
-			*p = base_atk_def.first;
+			buffer_write<int32_t>(p, base_atk_def.first);
 			q_cache.base_attack = base_atk_def.first;
-			++p;
 		}
 		if (query_flag & QUERY_BASE_DEFENSE) {
-			*p = base_atk_def.second;
+			buffer_write<int32_t>(p, base_atk_def.second);
 			q_cache.base_defense = base_atk_def.second;
-			++p;
 		}
 		if (query_flag & QUERY_REASON) {
-			*p = current.reason;
+			buffer_write<uint32_t>(p, current.reason);
 			q_cache.reason = current.reason;
-			++p;
 		}
 	}
 	else {
@@ -265,8 +288,7 @@ int32 card::get_infos(byte* buf, uint32 query_flag, int32 use_cache) {
 		if((query_flag & QUERY_ATTACK)) {
 			if (atk_def.first != q_cache.attack) {
 				q_cache.attack = atk_def.first;
-				*p = atk_def.first;
-				++p;
+				buffer_write<int32_t>(p, atk_def.first);
 			}
 			else
 				query_flag &= ~QUERY_ATTACK;
@@ -274,8 +296,7 @@ int32 card::get_infos(byte* buf, uint32 query_flag, int32 use_cache) {
 		if((query_flag & QUERY_DEFENSE)) {
 			if (atk_def.second != q_cache.defense) {
 				q_cache.defense = atk_def.second;
-				*p = atk_def.second;
-				++p;
+				buffer_write<int32_t>(p, atk_def.second);
 			}
 			else
 				query_flag &= ~QUERY_DEFENSE;
@@ -283,8 +304,7 @@ int32 card::get_infos(byte* buf, uint32 query_flag, int32 use_cache) {
 		if((query_flag & QUERY_BASE_ATTACK)) {
 			if (base_atk_def.first != q_cache.base_attack) {
 				q_cache.base_attack = base_atk_def.first;
-				*p = base_atk_def.first;
-				++p;
+				buffer_write<int32_t>(p, base_atk_def.first);
 			}
 			else
 				query_flag &= ~QUERY_BASE_ATTACK;
@@ -292,8 +312,7 @@ int32 card::get_infos(byte* buf, uint32 query_flag, int32 use_cache) {
 		if((query_flag & QUERY_BASE_DEFENSE)) {
 			if (base_atk_def.second != q_cache.base_defense) {
 				q_cache.base_defense = base_atk_def.second;
-				*p = base_atk_def.second;
-				++p;
+				buffer_write<int32_t>(p, base_atk_def.second);
 			}
 			else
 				query_flag &= ~QUERY_BASE_DEFENSE;
@@ -304,73 +323,68 @@ int32 card::get_infos(byte* buf, uint32 query_flag, int32 use_cache) {
 		}
 	}
 	if (query_flag & QUERY_REASON_CARD) {
-		*p = current.reason_card ? current.reason_card->get_info_location() : 0;
-		++p;
+		uint32 tdata = current.reason_card ? current.reason_card->get_info_location() : 0;
+		buffer_write<uint32_t>(p, tdata);
 	}
 	if(query_flag & QUERY_EQUIP_CARD) {
 		if (equiping_target) {
-			*p = equiping_target->get_info_location();
-			++p;
+			uint32 tdata = equiping_target->get_info_location();
+			buffer_write<uint32_t>(p, tdata);
 		}
 		else
 			query_flag &= ~QUERY_EQUIP_CARD;
 	}
 	if(query_flag & QUERY_TARGET_CARD) {
-		*p = (int32)effect_target_cards.size();
-		++p;
+		buffer_write<int32_t>(p, (int32_t)effect_target_cards.size());
 		for (auto& pcard : effect_target_cards) {
-			*p = pcard->get_info_location();
-			++p;
+			uint32 tdata = pcard->get_info_location();
+			buffer_write<uint32_t>(p, tdata);
 		}
 	}
 	if(query_flag & QUERY_OVERLAY_CARD) {
-		*p = (int32)xyz_materials.size();
-		++p;
+		buffer_write<int32_t>(p, (int32_t)xyz_materials.size());
 		for (auto& xcard : xyz_materials) {
-			*p = xcard->data.code;
-			++p;
+			buffer_write<uint32_t>(p, xcard->data.code);
 		}
 	}
 	if(query_flag & QUERY_COUNTERS) {
-		*p = (int32)counters.size();
-		++p;
+		buffer_write<int32_t>(p, (int32_t)counters.size());
 		for (const auto& cmit : counters) {
-			*p = cmit.first + ((cmit.second[0] + cmit.second[1]) << 16);
-			++p;
+			int32 tdata = cmit.first + ((cmit.second[0] + cmit.second[1]) << 16);
+			buffer_write<int32_t>(p, tdata);
 		}
 	}
 	if (query_flag & QUERY_OWNER) {
-		*p = owner;
-		++p;
+		int32 tdata = owner;
+		buffer_write<int32_t>(p, tdata);
 	}
 	if(query_flag & QUERY_STATUS) {
 		uint32 tdata = status & (STATUS_DISABLED | STATUS_FORBIDDEN | STATUS_PROC_COMPLETE);
 		if(!use_cache || (tdata != q_cache.status)) {
 			q_cache.status = tdata;
-			*p = tdata;
-			++p;
+			buffer_write<uint32_t>(p, tdata);
 		}
 		else
 			query_flag &= ~QUERY_STATUS;
 	}
 	if(!use_cache) {
 		if (query_flag & QUERY_LSCALE) {
-			*p = get_lscale();
-			q_cache.lscale = *p;
-			++p;
+			uint32 tdata = get_lscale();
+			buffer_write<uint32_t>(p, tdata);
+			q_cache.lscale = tdata;
 		}
 		if (query_flag & QUERY_RSCALE) {
-			*p = get_rscale();
-			q_cache.rscale = *p;
-			++p;
+			uint32 tdata = get_rscale();
+			buffer_write<uint32_t>(p, tdata);
+			q_cache.rscale = tdata;
 		}
 		if(query_flag & QUERY_LINK) {
-			*p = get_link();
-			q_cache.link = *p;
-			++p;
-			*p = get_link_marker();
-			q_cache.link_marker = *p;
-			++p;
+			uint32 tdata = get_link();
+			buffer_write<uint32_t>(p, tdata);
+			q_cache.link = tdata;
+			tdata = get_link_marker();
+			buffer_write<uint32_t>(p, tdata);
+			q_cache.link_marker = tdata;
 		}
 	}
 	else {
@@ -387,22 +401,18 @@ int32 card::get_infos(byte* buf, uint32 query_flag, int32 use_cache) {
 			uint32 link_marker = get_link_marker();
 			if((link != q_cache.link) || (link_marker != q_cache.link_marker)) {
 				q_cache.link = link;
-				*p = (int32)link;
-				++p;
+				buffer_write<uint32_t>(p, link);
 				q_cache.link_marker = link_marker;
-				*p = (int32)link_marker;
-				++p;
+				buffer_write<uint32_t>(p, link_marker);
 			}
 			else
 				query_flag &= ~QUERY_LINK;
 		}
 	}
-	int32* finalize = (int32*)buf;
-	*finalize = (byte*)p - buf;
-	++finalize;
-	*finalize = query_flag;
-	++finalize;
-	return (byte*)p - buf;
+	byte* finalize = buf;
+	buffer_write<int32_t>(finalize, p - buf);
+	buffer_write<uint32_t>(finalize, query_flag);
+	return (int32)(p - buf);
 }
 uint32 card::get_info_location() {
 	if(overlay_target) {
@@ -444,7 +454,7 @@ std::tuple<uint32, uint32> card::get_original_code_rule() const {
 uint32 card::get_code() {
 	if(assume_type == ASSUME_CODE)
 		return assume_value;
-	if (temp.code != 0xffffffff)
+	if(temp.code != UINT32_MAX) // prevent recursion, return the former value
 		return temp.code;
 	effect_set effects;
 	uint32 code = std::get<0>(get_original_code_rule());
@@ -452,7 +462,7 @@ uint32 card::get_code() {
 	filter_effect(EFFECT_CHANGE_CODE, &effects);
 	if (effects.size())
 		code = effects.get_last()->get_value(this);
-	temp.code = 0xffffffff;
+	temp.code = UINT32_MAX;
 	return code;
 }
 // return: the current second card name
@@ -596,7 +606,7 @@ uint32 card::get_type() {
 		return data.type;
 	if(current.is_location(LOCATION_PZONE))
 		return TYPE_PENDULUM + TYPE_SPELL;
-	if (temp.type != 0xffffffff)
+	if(temp.type != UINT32_MAX) // prevent recursion, return the former value
 		return temp.type;
 	effect_set effects;
 	int32 type = data.type;
@@ -613,7 +623,7 @@ uint32 card::get_type() {
 			type = effects[i]->get_value(this);
 		temp.type = type;
 	}
-	temp.type = 0xffffffff;
+	temp.type = UINT32_MAX;
 	if (data.type & TYPE_TOKEN)
 		type |= TYPE_TOKEN;
 	return type;
@@ -981,7 +991,7 @@ uint32 card::get_level() {
 		return 0;
 	if(assume_type == ASSUME_LEVEL)
 		return assume_value;
-	if (temp.level != 0xffffffff)
+	if(temp.level != UINT32_MAX) // prevent recursion, return the former value
 		return temp.level;
 	effect_set effects;
 	int32 level = data.level;
@@ -1004,7 +1014,7 @@ uint32 card::get_level() {
 	level += up;
 	if(level < 1 && (get_type() & TYPE_MONSTER))
 		level = 1;
-	temp.level = 0xffffffff;
+	temp.level = UINT32_MAX;
 	return level;
 }
 uint32 card::get_rank() {
@@ -1014,7 +1024,7 @@ uint32 card::get_rank() {
 		return assume_value;
 	if(!(current.location & LOCATION_MZONE))
 		return data.level;
-	if (temp.level != 0xffffffff)
+	if(temp.level != UINT32_MAX) // prevent recursion, return the former value
 		return temp.level;
 	effect_set effects;
 	int32 rank = data.level;
@@ -1037,7 +1047,7 @@ uint32 card::get_rank() {
 	rank += up;
 	if(rank < 1 && (get_type() & TYPE_MONSTER))
 		rank = 1;
-	temp.level = 0xffffffff;
+	temp.level = UINT32_MAX;
 	return rank;
 }
 uint32 card::get_link() {
@@ -1096,7 +1106,7 @@ uint32 card::get_attribute() {
 		return assume_value;
 	if(!(data.type & TYPE_MONSTER) && !(get_type() & TYPE_MONSTER) && !is_affected_by_effect(EFFECT_PRE_MONSTER))
 		return 0;
-	if (temp.attribute != 0xffffffff)
+	if(temp.attribute != UINT32_MAX) // prevent recursion, return the former value
 		return temp.attribute;
 	effect_set effects;
 	int32 attribute = data.attribute;
@@ -1116,7 +1126,7 @@ uint32 card::get_attribute() {
 		attribute = effects[i]->get_value(this);
 		temp.attribute = attribute;
 	}
-	temp.attribute = 0xffffffff;
+	temp.attribute = UINT32_MAX;
 	return attribute;
 }
 uint32 card::get_fusion_attribute(uint8 playerid) {
@@ -1166,7 +1176,7 @@ uint32 card::get_race() {
 		return assume_value;
 	if(!(data.type & TYPE_MONSTER) && !(get_type() & TYPE_MONSTER) && !is_affected_by_effect(EFFECT_PRE_MONSTER))
 		return 0;
-	if (temp.race != 0xffffffff)
+	if(temp.race != UINT32_MAX) // prevent recursion, return the former value
 		return temp.race;
 	effect_set effects;
 	int32 race = data.race;
@@ -1186,7 +1196,7 @@ uint32 card::get_race() {
 		race = effects[i]->get_value(this);
 		temp.race = race;
 	}
-	temp.race = 0xffffffff;
+	temp.race = UINT32_MAX;
 	return race;
 }
 uint32 card::get_link_race(uint8 playerid) {
@@ -1222,7 +1232,7 @@ uint32 card::get_grave_race(uint8 playerid) {
 uint32 card::get_lscale() {
 	if(!current.is_location(LOCATION_PZONE))
 		return data.lscale;
-	if (temp.lscale != 0xffffffff)
+	if(temp.lscale != UINT32_MAX) // prevent recursion, return the former value
 		return temp.lscale;
 	effect_set effects;
 	int32 lscale = data.lscale;
@@ -1245,13 +1255,13 @@ uint32 card::get_lscale() {
 	lscale += up + upc;
 	if(lscale < 0 && current.pzone)
 		lscale = 0;
-	temp.lscale = 0xffffffff;
+	temp.lscale = UINT32_MAX;
 	return lscale;
 }
 uint32 card::get_rscale() {
 	if(!current.is_location(LOCATION_PZONE))
 		return data.rscale;
-	if (temp.rscale != 0xffffffff)
+	if(temp.rscale != UINT32_MAX) // prevent recursion, return the former value
 		return temp.rscale;
 	effect_set effects;
 	int32 rscale = data.rscale;
@@ -1274,7 +1284,7 @@ uint32 card::get_rscale() {
 	rscale += up + upc;
 	if(rscale < 0 && current.pzone)
 		rscale = 0;
-	temp.rscale = 0xffffffff;
+	temp.rscale = UINT32_MAX;
 	return rscale;
 }
 uint32 card::get_link_marker() {
@@ -1286,8 +1296,7 @@ int32 card::is_link_marker(uint32 dir) {
 	return (int32)(get_link_marker() & dir);
 }
 uint32 card::get_linked_zone() {
-	if(!(data.type & TYPE_LINK) || current.location != LOCATION_MZONE
-		|| get_status(STATUS_SUMMONING | STATUS_SUMMON_DISABLED | STATUS_SPSUMMON_STEP))
+	if(!(data.type & TYPE_LINK) || current.location != LOCATION_MZONE || is_treated_as_not_on_field())
 		return 0;
 	int32 zones = 0;
 	int32 s = current.sequence;
@@ -1343,8 +1352,7 @@ void card::get_linked_cards(card_set* cset) {
 	pduel->game_field->get_cards_in_zone(cset, linked_zone >> 16, 1 - p, LOCATION_MZONE);
 }
 uint32 card::get_mutual_linked_zone() {
-	if(!(data.type & TYPE_LINK) || current.location != LOCATION_MZONE
-		|| get_status(STATUS_SUMMONING | STATUS_SUMMON_DISABLED | STATUS_SPSUMMON_STEP))
+	if(!(data.type & TYPE_LINK) || current.location != LOCATION_MZONE || is_treated_as_not_on_field())
 		return 0;
 	int32 zones = 0;
 	int32 p = current.controler;
@@ -1506,6 +1514,27 @@ int32 card::is_all_column() {
 	if(cset.size() == full)
 		return TRUE;
 	return FALSE;
+}
+uint8 card::get_select_sequence(uint8 *deck_seq_pointer) {
+	if(current.location == LOCATION_DECK && current.controler == pduel->game_field->core.selecting_player && !pduel->game_field->core.select_deck_seq_preserved) {
+		return (*deck_seq_pointer)++;
+	} else {
+		return current.sequence;
+	}
+}
+uint32 card::get_select_info_location(uint8 *deck_seq_pointer) {
+	if(current.location == LOCATION_DECK) {
+		uint32 c = current.controler;
+		uint32 l = current.location;
+		uint32 s = get_select_sequence(deck_seq_pointer);
+		uint32 ss = current.position;
+		return c + (l << 8) + (s << 16) + (ss << 24);
+	} else {
+		return get_info_location();
+	}
+}
+int32 card::is_treated_as_not_on_field() {
+	return get_status(STATUS_SUMMONING | STATUS_SUMMON_DISABLED | STATUS_ACTIVATE_DISABLED | STATUS_SPSUMMON_STEP);
 }
 void card::equip(card* target, uint32 send_msg) {
 	if (equiping_target)
@@ -1996,7 +2025,7 @@ void card::remove_effect(effect* peffect, effect_container::iterator it) {
 }
 int32 card::copy_effect(uint32 code, uint32 reset, uint32 count) {
 	card_data cdata;
-	read_card(code, &cdata);
+	::read_card(code, &cdata);
 	if(cdata.type & TYPE_NORMAL)
 		return -1;
 	set_status(STATUS_COPYING_EFFECT, TRUE);
@@ -2032,7 +2061,7 @@ int32 card::copy_effect(uint32 code, uint32 reset, uint32 count) {
 }
 int32 card::replace_effect(uint32 code, uint32 reset, uint32 count) {
 	card_data cdata;
-	read_card(code, &cdata);
+	::read_card(code, &cdata);
 	if(cdata.type & TYPE_NORMAL)
 		return -1;
 	if(is_status(STATUS_EFFECT_REPLACED))
@@ -2531,7 +2560,7 @@ void card::set_special_summon_status(effect* peffect) {
 	}
 	card* pcard = peffect->get_handler();
 	auto cait = pduel->game_field->core.current_chain.rbegin();
-	if(!(peffect->type & 0x7f0) || pcard->is_has_relation(*cait)) {
+	if(!(peffect->type & 0x7f0) || (pcard->is_has_relation(*cait) && !(pcard->get_type() & TYPE_TRAPMONSTER))) {
 		spsummon.code = pcard->get_code();
 		spsummon.code2 = pcard->get_another_code();
 		spsummon.type = pcard->get_type();
@@ -3255,8 +3284,8 @@ int32 card::is_spsummonable_card() {
 		pduel->lua->add_param(pduel->game_field->core.reason_effect, PARAM_TYPE_EFFECT);
 		pduel->lua->add_param(pduel->game_field->core.reason_player, PARAM_TYPE_INT);
 		pduel->lua->add_param(SUMMON_TYPE_SPECIAL, PARAM_TYPE_INT);
-		pduel->lua->add_param((void*)0, PARAM_TYPE_INT);
-		pduel->lua->add_param((void*)0, PARAM_TYPE_INT);
+		pduel->lua->add_param(0, PARAM_TYPE_INT);
+		pduel->lua->add_param(0, PARAM_TYPE_INT);
 		if(!eset[i]->check_value_condition(5))
 			return FALSE;
 	}
@@ -3274,8 +3303,8 @@ int32 card::is_fusion_summonable_card(uint32 summon_type) {
 		pduel->lua->add_param(pduel->game_field->core.reason_effect, PARAM_TYPE_EFFECT);
 		pduel->lua->add_param(pduel->game_field->core.reason_player, PARAM_TYPE_INT);
 		pduel->lua->add_param(summon_type, PARAM_TYPE_INT);
-		pduel->lua->add_param((void*)0, PARAM_TYPE_INT);
-		pduel->lua->add_param((void*)0, PARAM_TYPE_INT);
+		pduel->lua->add_param(0, PARAM_TYPE_INT);
+		pduel->lua->add_param(0, PARAM_TYPE_INT);
 		if(!eset[i]->check_value_condition(5))
 			return FALSE;
 	}
