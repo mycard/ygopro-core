@@ -218,6 +218,31 @@ int32 scriptlib::duel_destroy(lua_State *L) {
 		return 1;
 	});
 }
+int32 scriptlib::duel_exile(lua_State *L) {
+	check_action_permission(L);
+	check_param_count(L, 2);
+	card* pcard = 0;
+	group* pgroup = 0;
+	duel* pduel = 0;
+	if(check_param(L, PARAM_TYPE_CARD, 1, TRUE)) {
+		pcard = *(card**) lua_touserdata(L, 1);
+		pduel = pcard->pduel;
+	} else if(check_param(L, PARAM_TYPE_GROUP, 1, TRUE)) {
+		pgroup = *(group**) lua_touserdata(L, 1);
+		pduel = pgroup->pduel;
+	} else
+		luaL_error(L, "Parameter %d should be \"Card\" or \"Group\".", 1);
+	uint32 reason = lua_tointeger(L, 2);
+	if(pcard)
+		pduel->game_field->send_to(pcard, pduel->game_field->core.reason_effect, reason, pduel->game_field->core.reason_player, PLAYER_NONE, 0, 0, POS_FACEUP);
+	else
+		pduel->game_field->send_to(&(pgroup->container), pduel->game_field->core.reason_effect, reason, pduel->game_field->core.reason_player, PLAYER_NONE, 0, 0, POS_FACEUP);
+	return lua_yieldk(L, 0, (lua_KContext)pduel, [](lua_State *L, int32 status, lua_KContext ctx) {
+		duel* pduel = (duel*)ctx;
+		lua_pushinteger(L, pduel->game_field->returns.ivalue[0]);
+		return 1;
+	});
+}
 int32 scriptlib::duel_remove(lua_State *L) {
 	check_action_permission(L);
 	check_param_count(L, 3);
@@ -4808,6 +4833,7 @@ int32 scriptlib::duel_majestic_copy(lua_State *L) {
 
 static const struct luaL_Reg duellib[] = {
 	{ "EnableGlobalFlag", scriptlib::duel_enable_global_flag },
+	{ "Exile", scriptlib::duel_exile },
 	{ "GetLP", scriptlib::duel_get_lp },
 	{ "SetLP", scriptlib::duel_set_lp },
 	{ "IsTurnPlayer", scriptlib::duel_is_turn_player },
