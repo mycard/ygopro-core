@@ -30,18 +30,29 @@ workspace "ocgcoredll"
         defines "_DEBUG"
 
     filter "system:windows"
-        defines { "WIN32", "_WIN32" }
         systemversion "latest"
         startproject "ocgcore"
 
     filter { "configurations:Release", "action:vs*" }
-        flags { "LinkTimeOptimization" }
+        linktimeoptimization "On"
         staticruntime "On"
-        disablewarnings { "4267", "4334" }
+        disablewarnings { "4334" }
 
     filter "action:vs*"
+        cdialect "C11"
+        conformancemode "On"
         buildoptions { "/utf-8" }
         defines { "_CRT_SECURE_NO_WARNINGS" }
+
+    filter "system:bsd"
+        defines { "LUA_USE_POSIX" }
+
+    filter "system:macosx"
+        defines { "LUA_USE_MACOSX" }
+
+    filter "system:linux"
+        defines { "LUA_USE_LINUX" }
+        pic "On"
 
 filter {}
 
