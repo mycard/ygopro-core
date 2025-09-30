@@ -41,6 +41,7 @@ public:
 	static int32_t card_get_origin_link_marker(lua_State *L);
 	static int32_t card_is_xyz_summonable_by_rose(lua_State *L);
 	static int32_t card_get_removed_overlay_count(lua_State *L);
+	static int32_t card_check_spsummon_once(lua_State *L);
 	static int32_t effect_set_owner(lua_State *L);
 	static int32_t effect_get_count_limit(lua_State *L);
 	static int32_t duel_get_master_rule(lua_State *L);
@@ -61,6 +62,7 @@ public:
 	static int32_t duel_set_registry(lua_State *L);
 	static int32_t duel_get_registry(lua_State *L);
 	static int32_t duel_clear_registry(lua_State *L);
+	static int32_t duel_is_global_flag(lua_State *L);
 	//card lib
 	static int32_t card_get_code(lua_State *L);
 	static int32_t card_get_origin_code(lua_State *L);
@@ -684,6 +686,33 @@ public:
 	static int32_t group_meta_sub(lua_State *L);
 	static int32_t group_meta_band(lua_State *L);
 	static int32_t group_meta_bxor(lua_State *L);
+
+	//meta-related methods
+	static int32_t duel_get_meta_value(lua_State *L);
+	static int32_t duel_set_meta_value(lua_State *L);
+	static int32_t duel_has_meta_value(lua_State *L);
+	static int32_t duel_get_meta_keys(lua_State *L);
+	static int32_t duel_clear_meta(lua_State *L);
+	static int32_t duel_get_chain_meta_value(lua_State *L);
+	static int32_t duel_set_chain_meta_value(lua_State *L);
+	static int32_t duel_has_chain_meta_value(lua_State *L);
+	static int32_t duel_get_chain_meta_keys(lua_State *L);
+	static int32_t duel_clear_chain_meta(lua_State *L);
+	static int32_t card_get_meta_value(lua_State *L);
+	static int32_t card_set_meta_value(lua_State *L);
+	static int32_t card_has_meta_value(lua_State *L);
+	static int32_t card_get_meta_keys(lua_State *L);
+	static int32_t card_clear_meta(lua_State *L);
+	static int32_t group_get_meta_value(lua_State *L);
+	static int32_t group_set_meta_value(lua_State *L);
+	static int32_t group_has_meta_value(lua_State *L);
+	static int32_t group_get_meta_keys(lua_State *L);
+	static int32_t group_clear_meta(lua_State *L);
+	static int32_t effect_get_meta_value(lua_State *L);
+	static int32_t effect_set_meta_value(lua_State *L);
+	static int32_t effect_has_meta_value(lua_State *L);
+	static int32_t effect_get_meta_keys(lua_State *L);
+	static int32_t effect_clear_meta(lua_State *L);
 
 	//preload
 	static int32_t debug_message(lua_State *L);

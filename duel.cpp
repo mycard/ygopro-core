@@ -16,7 +16,7 @@
 #include "buffer.h"
 
 duel::duel() {
-	lua = new interpreter(this);
+	lua = new interpreter(this, false);
 	game_field = new field(this);
 	game_field->temp_card = new_card(TEMP_CARD_ID);
 	game_field->rose_card = 0;
@@ -33,8 +33,8 @@ duel::~duel() {
 		delete pgroup;
 	for(auto& peffect : effects)
 		delete peffect;
-	delete lua;
 	delete game_field;
+	delete lua;
 }
 void duel::clear() {
 	for(auto& pcard : cards)

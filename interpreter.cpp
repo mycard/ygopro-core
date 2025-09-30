@@ -14,22 +14,12 @@
 #include "ocgapi.h"
 #include "interpreter.h"
 
-interpreter::interpreter(duel* pd): coroutines(256) {
-	lua_State* tmp_L = luaL_newstate();  // 只是为了拿默认 alloc
-	lua_Alloc raw_alloc;
-	void* raw_ud;
-	raw_alloc = lua_getallocf(tmp_L, &raw_ud);
-	lua_close(tmp_L);
-
-	mem_tracker = new LuaMemTracker(raw_alloc, raw_ud, YGOPRO_LUA_MEMORY_SIZE);
-
+interpreter::interpreter(duel* pd, bool enable_unsafe_libraries)
+	: coroutines(256), pduel(pd), enable_unsafe_feature(enable_unsafe_libraries) {
+	mem_tracker = new LuaMemTracker(YGOPRO_LUA_MEMORY_SIZE);
 	lua_state = lua_newstate(LuaMemTracker::AllocThunk, mem_tracker);
 	current_state = lua_state;
-	pduel = pd;
 	std::memcpy(lua_getextraspace(lua_state), &pd, LUA_EXTRASPACE); //set_duel_info
-	no_action = 0;
-	call_depth = 0;
-	disable_action_check = 0;
 	//Initial
 #ifdef YGOPRO_NO_LUA_SAFE
 	luaL_openlibs(lua_state);
@@ -46,8 +36,21 @@ interpreter::interpreter(duel* pd): coroutines(256) {
 	lua_pop(lua_state, 1);
 	luaL_requiref(lua_state, "coroutine", luaopen_coroutine, 1);
 	lua_pop(lua_state, 1);
-#endif
+	if (enable_unsafe_libraries) {
+		luaL_requiref(lua_state, "io", luaopen_io, 1);
+		lua_pop(lua_state, 1);
+	}
 
+	auto nil_out = [&](const char* name) {
+		lua_pushnil(lua_state);
+		lua_setglobal(lua_state, name);
+	};
+	nil_out("collectgarbage");
+	if (!enable_unsafe_libraries) {
+		nil_out("dofile");
+		nil_out("loadfile");
+	}
+#endif
 	//open all libs
 	scriptlib::open_cardlib(lua_state);
 	scriptlib::open_effectlib(lua_state);
@@ -255,7 +258,11 @@ int32_t interpreter::load_script(const char* script_name) {
 		return OPERATION_FAIL;
 	++no_action;
 	luaL_checkstack(current_state, 2, nullptr);
-	int32_t error = luaL_loadbuffer(current_state, (const char*)buffer, len, script_name) || lua_pcall(current_state, 0, 0, 0);
+	int32_t error = 0;
+	if (enable_unsafe_feature && true)
+		error = luaL_loadbuffer(current_state, (const char*)buffer, len, script_name) || lua_pcall(current_state, 0, 0, 0);
+	else
+		error = luaL_loadbufferx(current_state, (const char*)buffer, len, script_name, "t") || lua_pcall(current_state, 0, 0, 0);
 	if (error) {
 		interpreter::sprintf(pduel->strbuffer, "%s", lua_tostring(current_state, -1));
 		handle_message(pduel, 1);

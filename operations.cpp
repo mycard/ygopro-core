@@ -24,7 +24,7 @@ int32_t field::negate_chain(uint8_t chaincount) {
 		pchain.flag |= CHAIN_DISABLE_ACTIVATE;
 		pchain.disable_reason = core.reason_effect;
 		pchain.disable_player = core.reason_player;
-		if((pchain.triggering_effect->type & EFFECT_TYPE_ACTIVATE) && (phandler->current.location == LOCATION_SZONE)) {
+		if((pchain.triggering_effect->type & EFFECT_TYPE_ACTIVATE) && phandler->is_has_relation(pchain) && (phandler->current.location == LOCATION_SZONE)) {
 			phandler->set_status(STATUS_LEAVE_CONFIRMED, TRUE);
 			phandler->set_status(STATUS_ACTIVATE_DISABLED, TRUE);
 		}
@@ -45,8 +45,7 @@ int32_t field::disable_chain(uint8_t chaincount, uint8_t forced) {
 	chain& pchain = core.current_chain[chaincount - 1];
 	card* phandler = pchain.triggering_effect->get_handler();
 	if(!(pchain.flag & CHAIN_DISABLE_EFFECT) && is_chain_disablable(pchain.chain_count)
-		&& (!phandler->is_has_relation(pchain) || phandler->is_affect_by_effect(core.reason_effect))
-		&& !(phandler->is_has_relation(pchain) && phandler->is_status(STATUS_DISABLED) && !forced)) {
+		&& (!phandler->is_has_relation(pchain) || phandler->is_affect_by_effect(core.reason_effect))) {
 		core.current_chain[chaincount - 1].flag |= CHAIN_DISABLE_EFFECT;
 		core.current_chain[chaincount - 1].disable_reason = core.reason_effect;
 		core.current_chain[chaincount - 1].disable_player = core.reason_player;

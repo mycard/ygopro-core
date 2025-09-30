@@ -24,17 +24,6 @@ class effect;
 class group;
 class duel;
 
-enum LuaParamType : int32_t {
-	PARAM_TYPE_INT = 0x01,
-	PARAM_TYPE_STRING = 0x02,
-	PARAM_TYPE_CARD = 0x04,
-	PARAM_TYPE_GROUP = 0x08,
-	PARAM_TYPE_EFFECT = 0x10,
-	PARAM_TYPE_FUNCTION = 0x20,
-	PARAM_TYPE_BOOLEAN = 0x40,
-	PARAM_TYPE_INDEX = 0x80,
-};
-
 class interpreter {
 public:
 	union lua_param {
@@ -45,19 +34,20 @@ public:
 	using param_list = std::list<std::pair<lua_param, LuaParamType>>;
 	
 	duel* pduel;
-	char msgbuf[64];
+	char msgbuf[64]{};
 	lua_State* lua_state;
 	lua_State* current_state;
+	LuaMemTracker* mem_tracker;
 	param_list params;
 	param_list resumes;
 	coroutine_map coroutines;
-	int32_t no_action;
-	int32_t call_depth;
-	int32_t disable_action_check;
-	int32_t preloaded;
-	LuaMemTracker* mem_tracker = nullptr;
+	int32_t no_action{};
+	int32_t call_depth{};
+	bool enable_unsafe_feature{};
+	int32_t disable_action_check{};
+	int32_t preloaded{};
 
-	explicit interpreter(duel* pd);
+	explicit interpreter(duel* pd, bool enable_unsafe_libraries);
 	~interpreter();
 
 	void register_card(card* pcard);
@@ -103,7 +93,7 @@ public:
 #define COROUTINE_ERROR		3
 
 #ifndef YGOPRO_LUA_MEMORY_SIZE
-#define YGOPRO_LUA_MEMORY_SIZE 67108864 // 64 MB
+#define YGOPRO_LUA_MEMORY_SIZE 0 // disable memory limit by default
 #endif
 
 #endif /* INTERPRETER_H_ */
