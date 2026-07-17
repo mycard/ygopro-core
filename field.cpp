@@ -12,6 +12,7 @@
 #include "effect.h"
 #include "interpreter.h"
 #include <algorithm>
+#include <functional>
 
 int32_t field::field_used_count[32] = {0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5};
 
@@ -47,14 +48,19 @@ void chain::set_triggering_state(card* pcard) {
 	triggering_state.defense = atk_def.second;
 }
 bool tevent::operator< (const tevent& v) const {
-	if(trigger_card != v.trigger_card) return trigger_card < v.trigger_card;
-	if(event_cards != v.event_cards) return event_cards < v.event_cards;
-	if(reason_effect != v.reason_effect) return reason_effect < v.reason_effect;
+	if(trigger_card != v.trigger_card) return std::less<card*>{}(trigger_card, v.trigger_card);
+	if(event_cards != v.event_cards) return std::less<group*>{}(event_cards, v.event_cards);
+	if(reason_effect != v.reason_effect) return std::less<effect*>{}(reason_effect, v.reason_effect);
 	if(event_code != v.event_code) return event_code < v.event_code;
 	if(event_value != v.event_value) return event_value < v.event_value;
 	if(reason != v.reason) return reason < v.reason;
 	if(event_player != v.event_player) return event_player < v.event_player;
 	return reason_player < v.reason_player;
+}
+bool delayed_effect_sort::operator()(const std::pair<effect*, tevent>& lhs, const std::pair<effect*, tevent>& rhs) const {
+	if(lhs.first != rhs.first)
+		return std::less<effect*>{}(lhs.first, rhs.first);
+	return lhs.second < rhs.second;
 }
 field::field(duel* pd)
 	: pduel(pd) {
