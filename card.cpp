@@ -172,7 +172,7 @@ int32_t card::get_infos(byte* buf, uint32_t query_flag, int32_t use_cache) {
 		buffer_write<uint32_t>(p, data.code);
 	}
 	if (query_flag & QUERY_POSITION) {
-		uint32_t tdata = get_info_location();
+		uint32_t tdata = get_public_info_location();
 		buffer_write<uint32_t>(p, tdata);
 		if (q_cache.info_location != tdata) {
 			q_cache.clear_cache();
@@ -401,22 +401,23 @@ uint32_t card::get_info_location() const {
 		return c | (l << 8) | (s << 16) | (ss << 24);
 	}
 }
+uint32_t card::get_public_info_location() {
+	uint32_t info = get_info_location();
+	if((current.location & LOCATION_ONFIELD) && is_affected_by_effect(EFFECT_REVEAL_ONFIELD))
+		info |= (static_cast<uint32_t>(POS_REVEAL) << 24);
+	return info;
+}
 // get the printed code on card
 uint32_t card::get_original_code() const {
 	return data.get_original_code();
 }
 // get the original code in duel (can be different from printed code)
 std::tuple<uint32_t, uint32_t> card::get_original_code_rule() const {
-	auto it = second_code.find(data.code);
+	auto it = second_code.find(data.get_original_code());
 	if (it != second_code.end()) {
-		return std::make_tuple(data.code, it->second);
+		return std::make_tuple(data.get_original_code(), it->second);
 	}
-	else {
-		if (data.alias)
-			return std::make_tuple(data.alias, 0);
-		else
-			return std::make_tuple(data.code, 0);
-	}
+	return std::make_tuple(data.get_duel_code(), 0);
 }
 // return: the current card name
 // for double-name cards, it returns printed name
