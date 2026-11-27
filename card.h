@@ -221,7 +221,7 @@ public:
 	static bool check_card_setcode(uint32_t code, uint32_t value);
 	bool is_extra_deck_monster() const { return !!(data.type & TYPES_EXTRA_DECK); }
 
-	int32_t get_infos(byte* buf, uint32_t query_flag, int32_t use_cache = TRUE);
+	int32_t get_infos(uint8_t* buf, uint32_t query_flag, int32_t use_cache = TRUE);
 	uint32_t get_info_location() const;
 	uint32_t get_public_info_location();
 	uint32_t get_original_code() const;
@@ -401,6 +401,7 @@ public:
 	int32_t is_capable_attack_announce(uint8_t playerid);
 	int32_t is_capable_change_position(uint8_t playerid);
 	int32_t is_capable_change_position_by_effect(uint8_t playerid);
+	uint8_t get_cannot_change_position_by_effect_mask(effect* reason_effect, uint8_t playerid);
 	int32_t is_capable_turn_set(uint8_t playerid);
 	int32_t is_capable_change_control();
 	int32_t is_control_can_be_changed(int32_t ignore_mzone, uint32_t zone);

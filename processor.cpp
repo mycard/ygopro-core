@@ -12,7 +12,9 @@
 #include "effect.h"
 #include "interpreter.h"
 #include "ocgapi.h"
+#include <algorithm>
 #include <iterator>
+#include <lauxlib.h>
 
 void field::add_process(uint16_t type, uint16_t step, effect* peffect, group* target, int32_t arg1, int32_t arg2, int32_t arg3, int32_t arg4, void* ptr1, void* ptr2) {
 	processor_unit new_unit;
@@ -336,7 +338,7 @@ uint32_t field::process() {
 		return pduel->buffer_size();
 	}
 	case PROCESSOR_MOVETOFIELD: {
-		if (move_to_field(it->step, (card*)it->ptarget, it->arg1, it->arg2 & 0xff, (it->arg2 >> 8) & 0xff, it->arg3))
+		if (move_to_field(it->step, (card*)it->ptarget, it->arg1, it->arg2 & 0xff, (it->arg2 >> 8) & 0xff, it->arg3, it->arg4))
 			core.units.pop_front();
 		else
 			++it->step;
@@ -5020,12 +5022,16 @@ int32_t field::adjust_step(uint16_t step) {
 		effect_set eset;
 		for(uint8_t p = 0; p < 2; ++p) {
 			for(auto& pcard : player[tp].list_mzone) {
-				if(!pcard || (pcard->data.type & TYPE_LINK) || pcard->is_affected_by_effect(EFFECT_CANNOT_CHANGE_POS_E))
+				if(!pcard || (pcard->data.type & TYPE_LINK))
 					continue;
 				eset.clear();
 				pcard->filter_effect(EFFECT_SET_POSITION, &eset);
 				if(eset.size()) {
-					pos = eset.back()->get_value();
+					effect* peffect = eset.back();
+					pos = peffect->get_value();
+					uint8_t forbidden_pos = pcard->get_cannot_change_position_by_effect_mask(peffect, peffect->get_handler_player());
+					if(forbidden_pos == 0xff || (forbidden_pos & (pos & 0xff)))
+						continue;
 					if((pos & 0xff) != pcard->current.position) {
 						pos_adjust.insert(pcard);
 						pcard->position_param = pos;

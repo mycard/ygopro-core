@@ -149,7 +149,7 @@ card::card(duel* pd)
 	temp.init_state();
 	current.controler = PLAYER_NONE;
 }
-inline void update_cache(uint32_t tdata, uint32_t& cache, byte*& p, uint32_t& query_flag, uint32_t flag) {
+inline void update_cache(uint32_t tdata, uint32_t& cache, uint8_t*& p, uint32_t& query_flag, uint32_t flag) {
 	if (tdata != cache) {
 		cache = tdata;
 		buffer_write<uint32_t>(p, tdata);
@@ -157,8 +157,8 @@ inline void update_cache(uint32_t tdata, uint32_t& cache, byte*& p, uint32_t& qu
 	else
 		query_flag &= ~flag;
 }
-int32_t card::get_infos(byte* buf, uint32_t query_flag, int32_t use_cache) {
-	byte* p = buf;
+int32_t card::get_infos(uint8_t* buf, uint32_t query_flag, int32_t use_cache) {
+	uint8_t* p = buf;
 	std::pair<int32_t, int32_t> atk_def(-10, -10);
 	std::pair<int32_t, int32_t> base_atk_def(-10, -10);
 	if ((query_flag & QUERY_ATTACK) || (query_flag & QUERY_DEFENSE)) {
@@ -382,7 +382,7 @@ int32_t card::get_infos(byte* buf, uint32_t query_flag, int32_t use_cache) {
 				query_flag &= ~QUERY_LINK;
 		}
 	}
-	byte* finalize = buf;
+	uint8_t* finalize = buf;
 	buffer_write<int32_t>(finalize, (int32_t)(p - buf));
 	buffer_write<uint32_t>(finalize, query_flag);
 	return (int32_t)(p - buf);
@@ -3998,6 +3998,19 @@ int32_t card::is_capable_change_position_by_effect(uint8_t playerid) {
 	if(data.type & TYPE_LINK)
 		return FALSE;
 	return TRUE;
+}
+uint8_t card::get_cannot_change_position_by_effect_mask(effect* reason_effect, uint8_t playerid) {
+	effect_set eset;
+	filter_effect(EFFECT_CANNOT_CHANGE_POS_E, &eset, FALSE);
+	uint8_t mask = 0;
+	for(effect_set::size_type i = 0; i < eset.size(); ++i) {
+		if(!eset[i]->value)
+			return 0xff;
+		pduel->lua->add_param(playerid, PARAM_TYPE_INT);
+		int32_t val = eset[i]->get_value(reason_effect, 1);
+		mask |= static_cast<uint8_t>(val & 0xff);
+	}
+	return mask;
 }
 int32_t card::is_capable_turn_set(uint8_t playerid) {
 	if(data.type & (TYPE_LINK | TYPE_TOKEN))

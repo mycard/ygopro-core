@@ -5,14 +5,17 @@
  *      Author: Argon
  */
 
-#include <cstring>
 #include "duel.h"
+#include "field.h"
 #include "group.h"
 #include "card.h"
 #include "effect.h"
 #include "scriptlib.h"
 #include "ocgapi.h"
 #include "interpreter.h"
+#include <cstring>
+#include <lauxlib.h>
+#include <lualib.h>
 
 interpreter::interpreter(duel* pd, bool enable_unsafe_libraries)
 	: coroutines(256), pduel(pd), enable_unsafe_feature(enable_unsafe_libraries) {
@@ -145,7 +148,7 @@ void interpreter::unregister_group(group *pgroup) {
 }
 int32_t interpreter::load_script(const char* script_name) {
 	int len = 0;
-	byte* buffer = ::read_script(script_name, &len);
+	uint8_t* buffer = ::read_script(script_name, &len);
 	if (!buffer)
 		return OPERATION_FAIL;
 	++no_action;
